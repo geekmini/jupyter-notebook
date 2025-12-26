@@ -89,6 +89,15 @@ load_dotenv(find_dotenv(".env"), override=True)
 
 ## DAGs
 
+### Airflow 3.x Imports
+
+Use `airflow.sdk` for decorators (not deprecated `airflow.decorators`):
+
+```python
+from airflow.sdk import dag, task  # Airflow 3.x
+# NOT: from airflow.decorators import dag, task  # deprecated
+```
+
 ### pdf_to_markdown
 
 Converts PDF files to Markdown using Qwen3-VL vision model with parallel batch processing.

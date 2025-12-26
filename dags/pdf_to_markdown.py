@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from airflow.decorators import dag, task  # type: ignore[attr-defined]
+from airflow.sdk import dag, task
 from pdf_converter.batch_generator import generate_batch_configs
 from pdf_converter.batch_processor import process_batch
 from pdf_converter.image_converter import pdf_to_images

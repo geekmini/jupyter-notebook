@@ -2,31 +2,29 @@
 
 ## Prerequisites
 
-- Python >= 3.12
-- [uv](https://docs.astral.sh/uv/) - Python package manager
-- [just](https://github.com/casey/just) - Command runner
+- macOS with [Homebrew](https://brew.sh/)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) - AI-powered CLI
 
 ```sh
-brew install python@3.12 uv just
+# Install Homebrew (if not installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Claude Code
+brew install claude-code
 ```
 
 ## Setup
 
-```sh
-just init
-```
-
-This will sync all dependencies and setup git hooks.
-
-## Commands
+Run the setup command in Claude Code:
 
 ```sh
-just          # List all available commands
-just sync     # Install all dependencies
-just lint     # Run linter
-just lint-fix # Auto-fix lint issues
-just fmt      # Format code
-just check    # Run all checks
-just test     # Run tests
-just run <cmd># Run any Python command
+claude -p /setup
 ```
+
+This will install all required tools (Python, uv, just, OrbStack), create `.env` from `.env.example`, sync dependencies, and setup git hooks.
+
+## Local URLs
+
+| Service | URL                   | Credentials         |
+| ------- | --------------------- | ------------------- |
+| Airflow | http://localhost:8080 | `airflow` `airflow` |

@@ -1,6 +1,6 @@
 ---
 name: airflow-cli
-description: Interact with local Airflow instance via CLI. Use when user asks to check DAG status, list runs, view logs, trigger DAGs, get task states, or manage Airflow resources (pools, variables, connections).
+description: This skill should be used when interacting with local Airflow instance via CLI. Triggers on "check DAG status", "list DAG runs", "view task logs", "trigger DAG", "get task states", "list pools", "list variables", or any Airflow CLI operations.
 ---
 
 # Airflow CLI

@@ -1,0 +1,33 @@
+.venv
+__pycache__
+*.pyc
+.idea
+.DS_Store
+*.DS_Store
+.pytest_cache
+.ruff_cache
+
+.env
+.env-prod*
+.env-qa*
+.env-sandbox*
+
+tmp-*
+tmp_*
+
+.ipynb_checkpoints
+conda.txt
+
+# migration test
+test_data/eng/migration
+
+# real data
+test_data/eng/migration/common/**/*.json
+test_data/eng/migration/common/**/*.csv
+test_data/eng/migration/migrate_user/**/*.json
+test_data/eng/migration/migrate_user/**/*.csv
+
+# sample data
+!test_data/eng/migration/common/customer-mapping/60a3d3ffda05ef00130f727c.json
+!test_data/eng/migration/common/group-mapping/60a3d3ffda05ef00130f727c.json
+!test_data/eng/migration/migrate-user/v2-customer-60a3d3ffda05ef00130f727c

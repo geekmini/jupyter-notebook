@@ -19,5 +19,10 @@ tmp_*
 conda.txt
 
 # test data
-
 test_data/
+
+# MinIO local data
+minio-data/
+
+# logs
+logs/

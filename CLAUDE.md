@@ -36,20 +36,90 @@ just airflow-cli <args>  # Run any Airflow CLI command
 
 ## Project Structure
 
-- `src/notebooks/` - Jupyter notebooks
-- `src/libs/` - Shared Python libraries for notebooks
-- `dags/` - Airflow DAG files
-- `logs/` - Airflow task execution logs
-- `plugins/` - Custom Airflow plugins
-- `config/` - Airflow configuration files
-- `pyproject.toml` - All config: dependencies, ruff, pyright
-- `.env.local` - Local environment variables (loaded via python-dotenv)
+Flat structure for simplicity - shared libraries at root level:
+
+```
+├── dags/           # Airflow DAG files
+├── libs/           # Shared Python libraries (PYTHONPATH configured)
+│   └── pdf_converter/
+├── notebooks/      # Jupyter notebooks (spike/exploration)
+├── docs/           # Project documentation
+├── logs/           # Airflow task execution logs
+├── plugins/        # Custom Airflow plugins
+├── config/         # Airflow configuration files
+├── minio-data/     # MinIO storage (gitignored)
+├── pyproject.toml  # Dependencies, ruff, pyright config
+└── .env            # Environment variables
+```
+
+**Why flat structure?**
+- `libs/` at root (not `src/libs/`) for easy imports
+- `PYTHONPATH=/opt/airflow/libs` set in docker-compose.yaml
+- No `sys.path.insert()` hacks needed in DAGs
+
+## Logging
+
+Use Python's standard `logging` module with `__name__` - Airflow configures the handlers automatically.
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Use in DAGs and libs
+logger.info("Processing started")
+logger.warning("Something unexpected")
+logger.exception("Error occurred")  # Includes stack trace
+```
+
+**Guidelines:**
+- Use `logger.info()` for normal progress messages
+- Use `logger.warning()` for recoverable issues
+- Use `logger.exception()` in except blocks (auto-includes traceback)
+- Avoid `print()` - use logger for proper Airflow log integration
 
 ## Notebooks
 
-Notebooks load environment from `.env.local` and add parent directory to `sys.path` for imports:
+Notebooks load environment from `.env` and add parent directory to `sys.path` for imports:
 
 ```python
 from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv(".env.local"), override=True)
+load_dotenv(find_dotenv(".env"), override=True)
 ```
+
+## DAGs
+
+### pdf_to_markdown
+
+Converts PDF files to Markdown using Qwen3-VL vision model with parallel batch processing.
+
+**Trigger manually:**
+```sh
+# Process entire PDF
+just airflow-cli dags trigger pdf_to_markdown --conf '{"pdf_key": "example.pdf"}'
+
+# Test with limited pages (e.g., first 3 pages only)
+just airflow-cli dags trigger pdf_to_markdown --conf '{"pdf_key": "example.pdf", "max_pages": 3}'
+```
+
+**MinIO Buckets:**
+- `pdf-input` - Upload source PDFs here
+- `markdown-output` - Converted markdown files
+- `temp` - Intermediate PNG images (auto-cleaned on success)
+
+## Airflow Pools
+
+Pools are used for rate limiting external API calls. Create required pools before running DAGs.
+
+**Create pool via CLI:**
+```sh
+just airflow-cli pools set openrouter_api_pool 5 "Limit concurrent OpenRouter API calls"
+```
+
+**Or via Airflow UI:**
+1. Go to Admin > Pools
+2. Add new pool: `openrouter_api_pool` with 5 slots
+
+**DAG pool usage:**
+- `process_batch_task` uses `openrouter_api_pool` to limit concurrent API calls
+- Pool slots control max parallel API requests (adjust based on rate limits)

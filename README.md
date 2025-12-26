@@ -18,8 +18,8 @@ This will install all required tools (Homebrew, Python, uv, just, OrbStack), cre
 
 ## Local URLs
 
-| Service       | URL                   | Credentials               |
-| ------------- | --------------------- | ------------------------- |
-| Airflow       | http://localhost:8080 | `airflow` / `airflow`     |
+| Service       | URL                   | Credentials                 |
+| ------------- | --------------------- | --------------------------- |
+| Airflow       | http://localhost:8080 | `airflow` / `airflow`       |
 | MinIO Console | http://localhost:9003 | `minioadmin` / `minioadmin` |
-| MinIO API     | http://localhost:9002 | -                         |
+| MinIO API     | http://localhost:9002 | -                           |

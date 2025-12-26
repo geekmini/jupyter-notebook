@@ -109,17 +109,14 @@ just airflow-cli dags trigger pdf_to_markdown --conf '{"pdf_key": "example.pdf",
 
 ## Airflow Pools
 
-Pools are used for rate limiting external API calls. Create required pools before running DAGs.
+Pools are used for rate limiting external API calls. Pools are **auto-created** on startup via `airflow-setup` service.
 
-**Create pool via CLI:**
+**Pre-configured pools:**
+- `openrouter_api_pool` (5 slots) - Limits concurrent OpenRouter API calls
+
+**Adjust pool size via CLI:**
 ```sh
-just airflow-cli pools set openrouter_api_pool 5 "Limit concurrent OpenRouter API calls"
+just airflow-cli pools set openrouter_api_pool 10 "Limit concurrent OpenRouter API calls"
 ```
 
-**Or via Airflow UI:**
-1. Go to Admin > Pools
-2. Add new pool: `openrouter_api_pool` with 5 slots
-
-**DAG pool usage:**
-- `process_batch_task` uses `openrouter_api_pool` to limit concurrent API calls
-- Pool slots control max parallel API requests (adjust based on rate limits)
+**Or via Airflow UI:** Admin > Pools

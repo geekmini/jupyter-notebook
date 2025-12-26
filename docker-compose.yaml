@@ -306,6 +306,24 @@ services:
       _PIP_ADDITIONAL_REQUIREMENTS: ''
     user: "0:0"
 
+  airflow-setup:
+    <<: *airflow-common
+    command:
+      - bash
+      - -c
+      - |
+        echo "Setting up Airflow resources..."
+        airflow pools set openrouter_api_pool 5 "Limit concurrent OpenRouter API calls" || true
+        echo "Airflow setup complete!"
+    environment:
+      <<: *airflow-common-env
+      _PIP_ADDITIONAL_REQUIREMENTS: ''  # Skip pip install for faster startup
+    depends_on:
+      airflow-apiserver:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
   airflow-cli:
     <<: *airflow-common
     profiles:

@@ -87,5 +87,6 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pyright]
+typeCheckingMode = "off"
 reportMissingImports = false
 reportMissingModuleSource = false

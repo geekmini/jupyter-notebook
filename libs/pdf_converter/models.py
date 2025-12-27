@@ -125,3 +125,73 @@ class DAGRunMetrics:
             "cost_per_page": self.total_cost_usd / self.total_pages if self.total_pages > 0 else 0,
             "markdown_s3_keys": self.markdown_s3_keys,
         }
+
+
+@dataclass
+class LLMResponse:
+    """Generic response from LLM API call."""
+
+    content: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cost_usd: float
+    raw_response: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class FormattingConfig:
+    """Configuration for formatting a single markdown file."""
+
+    markdown_s3_key: str
+    output_bucket: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for XCom serialization."""
+        return {
+            "markdown_s3_key": self.markdown_s3_key,
+            "output_bucket": self.output_bucket,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FormattingConfig":
+        """Create from dictionary (XCom deserialization)."""
+        return cls(
+            markdown_s3_key=data["markdown_s3_key"],
+            output_bucket=data["output_bucket"],
+        )
+
+
+@dataclass
+class FormattingResult:
+    """Result of formatting a single markdown file."""
+
+    markdown_s3_key: str
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float
+    success: bool
+    error_message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for XCom serialization."""
+        return {
+            "markdown_s3_key": self.markdown_s3_key,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "cost_usd": self.cost_usd,
+            "success": self.success,
+            "error_message": self.error_message,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FormattingResult":
+        """Create from dictionary (XCom deserialization)."""
+        return cls(
+            markdown_s3_key=data["markdown_s3_key"],
+            prompt_tokens=data["prompt_tokens"],
+            completion_tokens=data["completion_tokens"],
+            cost_usd=data["cost_usd"],
+            success=data["success"],
+            error_message=data.get("error_message"),
+        )

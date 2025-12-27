@@ -20,7 +20,8 @@ from airflow.sdk import dag, task
 from pdf_converter.batch_generator import generate_batch_configs
 from pdf_converter.batch_processor import process_batch
 from pdf_converter.image_converter import pdf_to_images
-from pdf_converter.models import BatchResult, DAGRunMetrics
+from pdf_converter.markdown_formatter import format_markdown
+from pdf_converter.models import BatchResult, DAGRunMetrics, FormattingConfig, FormattingResult
 from pdf_converter.s3_client import S3Client
 
 
@@ -145,6 +146,72 @@ def pdf_to_markdown_dag():
         return process_batch(batch_config)
 
     @task
+    def create_formatting_configs(metrics: dict) -> list[dict]:
+        """Generate formatting configs from conversion metrics."""
+        markdown_keys = metrics["markdown_s3_keys"]
+        configs = [
+            FormattingConfig(
+                markdown_s3_key=key,
+                output_bucket=OUTPUT_BUCKET,
+            ).to_dict()
+            for key in markdown_keys
+        ]
+        logger.info(f"Created {len(configs)} formatting configs")
+        return configs
+
+    @task(
+        retries=3,
+        retry_delay=timedelta(seconds=30),
+        pool="openrouter_api_pool",  # Same pool as batch processing
+        execution_timeout=timedelta(minutes=5),  # Formatting is faster than vision API
+    )
+    def format_markdown_task(formatting_config: dict) -> dict:
+        """Format a single markdown file using Claude 3 Haiku."""
+        return format_markdown(formatting_config)
+
+    @task
+    def aggregate_formatting_results(
+        formatting_results: list[dict],
+        conversion_metrics: dict,
+    ) -> dict:
+        """Combine conversion and formatting metrics."""
+        # Parse results
+        results = [FormattingResult.from_dict(r) for r in formatting_results]
+        successful = [r for r in results if r.success]
+        failed = [r for r in results if not r.success]
+
+        # Calculate formatting metrics
+        formatting_prompt_tokens = sum(r.prompt_tokens for r in successful)
+        formatting_completion_tokens = sum(r.completion_tokens for r in successful)
+        formatting_cost_usd = sum(r.cost_usd for r in successful)
+
+        # Log formatting summary
+        logger.info("=" * 60)
+        logger.info("MARKDOWN FORMATTING SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Files formatted: {len(successful)} ({len(failed)} failed)")
+        logger.info(f"Formatting prompt tokens: {formatting_prompt_tokens:,}")
+        logger.info(f"Formatting completion tokens: {formatting_completion_tokens:,}")
+        logger.info(f"Formatting cost: ${formatting_cost_usd:.6f} USD")
+        if failed:
+            logger.warning(f"Failed files: {[r.markdown_s3_key for r in failed]}")
+        logger.info("=" * 60)
+
+        # Combine metrics
+        total_cost = conversion_metrics["total_cost_usd"] + formatting_cost_usd
+        logger.info(f"TOTAL PIPELINE COST: ${total_cost:.6f} USD")
+        logger.info("=" * 60)
+
+        return {
+            **conversion_metrics,
+            "formatting_prompt_tokens": formatting_prompt_tokens,
+            "formatting_completion_tokens": formatting_completion_tokens,
+            "formatting_cost_usd": formatting_cost_usd,
+            "formatted_files": len(successful),
+            "total_pipeline_cost_usd": total_cost,
+        }
+
+    @task
     def aggregate_results(batch_results: list[dict], pdf_key: str, image_keys: list[str], **context) -> dict:
         """Aggregate batch results and generate metrics."""
         dag_run_id = context["dag_run"].run_id
@@ -221,12 +288,21 @@ def pdf_to_markdown_dag():
     # Dynamic task mapping - process batches in parallel
     batch_results = process_batch_task.expand(batch_config=batch_configs)  # type: ignore[attr-defined]
 
-    # Aggregate and cleanup
-    metrics = aggregate_results(batch_results, pdf_key, image_keys)
+    # Aggregate conversion results
+    conversion_metrics = aggregate_results(batch_results, pdf_key, image_keys)
+
+    # Format markdown files in parallel
+    formatting_configs = create_formatting_configs(conversion_metrics)
+    formatting_results = format_markdown_task.expand(formatting_config=formatting_configs)  # type: ignore[attr-defined]
+
+    # Aggregate formatting results and combine with conversion metrics
+    final_metrics = aggregate_formatting_results(formatting_results, conversion_metrics)
+
+    # Cleanup temp files
     cleanup = cleanup_temp_files()
 
     # Set task dependencies (Airflow syntax)
-    metrics >> cleanup  # type: ignore[operator]
+    final_metrics >> cleanup  # type: ignore[operator]
 
 
 # Instantiate the DAG

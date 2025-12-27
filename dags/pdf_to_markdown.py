@@ -20,7 +20,9 @@ from airflow.sdk import dag, task
 from pdf_converter.batch_generator import generate_batch_configs
 from pdf_converter.batch_processor import process_batch
 from pdf_converter.image_converter import pdf_to_images
-from pdf_converter.models import BatchResult, DAGRunMetrics
+from pdf_converter.markdown_formatter import format_markdown
+from pdf_converter.models import BatchResult, DAGRunMetrics, FormattingConfig, FormattingResult
+from pdf_converter.prompts import Language
 from pdf_converter.s3_client import S3Client
 
 
@@ -125,10 +127,28 @@ def pdf_to_markdown_dag():
         dag_run_id = context["dag_run"].run_id
         pdf_filename = Path(pdf_key).name
 
+        # Extract target language from DAG run conf (default: Chinese)
+        dag_run = context.get("dag_run")
+        conf = dag_run.conf if dag_run else {}
+        target_language = conf.get("target_language", "zh") if conf else "zh"
+
+        # Convert string to Language enum with validation
+        try:
+            language = Language(target_language)
+        except ValueError:
+            logger.warning(
+                f"Invalid target_language '{target_language}', falling back to Chinese. "
+                f"Valid options: {[lang.value for lang in Language]}"
+            )
+            language = Language.CHINESE
+
+        logger.info(f"Target language: {language.value} ({language.name})")
+
         configs = generate_batch_configs(
             image_s3_keys=image_keys,
             pdf_filename=pdf_filename,
             dag_run_id=dag_run_id,
+            language=language,
             batch_size=BATCH_SIZE,
         )
         logger.info(f"Created {len(configs)} batch configs for {len(image_keys)} pages")
@@ -143,6 +163,85 @@ def pdf_to_markdown_dag():
     def process_batch_task(batch_config: dict) -> dict:
         """Process a single batch of images through Qwen3-VL."""
         return process_batch(batch_config)
+
+    @task
+    def create_formatting_configs(metrics: dict, **context) -> list[dict]:
+        """Generate formatting configs from conversion metrics."""
+        markdown_keys = metrics["markdown_s3_keys"]
+
+        # Extract target language from DAG run conf (must match conversion stage)
+        dag_run = context.get("dag_run")
+        conf = dag_run.conf if dag_run else {}
+        target_language = conf.get("target_language", "zh") if conf else "zh"
+
+        try:
+            language = Language(target_language)
+        except ValueError:
+            logger.warning(f"Invalid target_language '{target_language}' in formatting, falling back to Chinese.")
+            language = Language.CHINESE
+
+        configs = [
+            FormattingConfig(
+                markdown_s3_key=key,
+                output_bucket=OUTPUT_BUCKET,
+                language=language,
+            ).to_dict()
+            for key in markdown_keys
+        ]
+        logger.info(f"Created {len(configs)} formatting configs (language={language.value})")
+        return configs
+
+    @task(
+        retries=3,
+        retry_delay=timedelta(seconds=30),
+        pool="openrouter_api_pool",  # Same pool as batch processing
+        execution_timeout=timedelta(minutes=5),  # Formatting is faster than vision API
+    )
+    def format_markdown_task(formatting_config: dict) -> dict:
+        """Format a single markdown file using Claude 3 Haiku."""
+        return format_markdown(formatting_config)
+
+    @task
+    def aggregate_formatting_results(
+        formatting_results: list[dict],
+        conversion_metrics: dict,
+    ) -> dict:
+        """Combine conversion and formatting metrics."""
+        # Parse results
+        results = [FormattingResult.from_dict(r) for r in formatting_results]
+        successful = [r for r in results if r.success]
+        failed = [r for r in results if not r.success]
+
+        # Calculate formatting metrics
+        formatting_prompt_tokens = sum(r.prompt_tokens for r in successful)
+        formatting_completion_tokens = sum(r.completion_tokens for r in successful)
+        formatting_cost_usd = sum(r.cost_usd for r in successful)
+
+        # Log formatting summary
+        logger.info("=" * 60)
+        logger.info("MARKDOWN FORMATTING SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Files formatted: {len(successful)} ({len(failed)} failed)")
+        logger.info(f"Formatting prompt tokens: {formatting_prompt_tokens:,}")
+        logger.info(f"Formatting completion tokens: {formatting_completion_tokens:,}")
+        logger.info(f"Formatting cost: ${formatting_cost_usd:.6f} USD")
+        if failed:
+            logger.warning(f"Failed files: {[r.markdown_s3_key for r in failed]}")
+        logger.info("=" * 60)
+
+        # Combine metrics
+        total_cost = conversion_metrics["total_cost_usd"] + formatting_cost_usd
+        logger.info(f"TOTAL PIPELINE COST: ${total_cost:.6f} USD")
+        logger.info("=" * 60)
+
+        return {
+            **conversion_metrics,
+            "formatting_prompt_tokens": formatting_prompt_tokens,
+            "formatting_completion_tokens": formatting_completion_tokens,
+            "formatting_cost_usd": formatting_cost_usd,
+            "formatted_files": len(successful),
+            "total_pipeline_cost_usd": total_cost,
+        }
 
     @task
     def aggregate_results(batch_results: list[dict], pdf_key: str, image_keys: list[str], **context) -> dict:
@@ -195,24 +294,6 @@ def pdf_to_markdown_dag():
 
         return metrics.to_dict()
 
-    @task(trigger_rule="all_success")  # Only cleanup if all upstream tasks succeeded
-    def cleanup_temp_files(**context) -> None:
-        """Delete temporary PNG files from temp bucket.
-
-        Only runs if all upstream tasks succeeded.
-        On failure, temp files are preserved for debugging.
-        """
-        dag_run_id = context["dag_run"].run_id
-        s3_client = S3Client()
-
-        # List and delete all temp files for this run
-        temp_keys = s3_client.list_objects(TEMP_BUCKET, f"{dag_run_id}/")
-        if temp_keys:
-            logger.info(f"Cleaning up {len(temp_keys)} temporary files")
-            s3_client.delete_objects(TEMP_BUCKET, temp_keys)
-        else:
-            logger.info("No temporary files to clean up")
-
     # Define task flow
     pdf_key = get_new_pdf_key()
     image_keys = convert_pdf_to_images(pdf_key)
@@ -221,12 +302,19 @@ def pdf_to_markdown_dag():
     # Dynamic task mapping - process batches in parallel
     batch_results = process_batch_task.expand(batch_config=batch_configs)  # type: ignore[attr-defined]
 
-    # Aggregate and cleanup
-    metrics = aggregate_results(batch_results, pdf_key, image_keys)
-    cleanup = cleanup_temp_files()
+    # Aggregate conversion results
+    conversion_metrics = aggregate_results(batch_results, pdf_key, image_keys)
 
-    # Set task dependencies (Airflow syntax)
-    metrics >> cleanup  # type: ignore[operator]
+    # Format markdown files in parallel
+    formatting_configs = create_formatting_configs(conversion_metrics)
+    formatting_results = format_markdown_task.expand(formatting_config=formatting_configs)  # type: ignore[attr-defined]
+
+    # Aggregate formatting results and combine with conversion metrics
+    final_metrics = aggregate_formatting_results(formatting_results, conversion_metrics)
+
+    # Note: Temp files (PNG images) are kept as cache for future runs
+    # The final_metrics task is the last task in the DAG
+    return final_metrics
 
 
 # Instantiate the DAG

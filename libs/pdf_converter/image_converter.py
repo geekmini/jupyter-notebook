@@ -24,9 +24,12 @@ def pdf_to_images(
 ) -> list[str]:
     """Convert PDF to PNG images and upload to S3 temp bucket.
 
+    Images are cached by PDF filename - if images already exist in the temp bucket,
+    they are reused without re-conversion.
+
     Args:
         pdf_s3_key: S3 key of PDF file in input bucket
-        dag_run_id: Unique identifier for this DAG run (used for temp file prefix)
+        dag_run_id: Unique identifier for this DAG run (used for local temp files only)
         s3_client: S3 client instance
         input_bucket: Name of input bucket containing PDF
         dpi: Resolution for rendering (150 = 2x scale)
@@ -34,8 +37,20 @@ def pdf_to_images(
     Returns:
         List of S3 keys for uploaded PNG images in temp bucket
     """
-    # Download PDF to temp location
     pdf_filename = Path(pdf_s3_key).name
+    pdf_stem = Path(pdf_filename).stem
+
+    # Check if cached images exist (cache key is pdf_stem, not dag_run_id)
+    cache_prefix = f"{pdf_stem}/"
+    cached_keys = s3_client.list_objects(TEMP_BUCKET, cache_prefix)
+    cached_images = sorted([k for k in cached_keys if k.endswith(".png")])
+
+    if cached_images:
+        logger.info(f"Found {len(cached_images)} cached images for '{pdf_stem}', skipping conversion")
+        return cached_images
+
+    # No cache - download PDF and convert
+    logger.info(f"No cached images found for '{pdf_stem}', converting PDF to images")
     temp_pdf_path = Path(f"/tmp/{dag_run_id}/{pdf_filename}")
     s3_client.download_file(input_bucket, pdf_s3_key, temp_pdf_path)
 
@@ -50,7 +65,6 @@ def pdf_to_images(
         mat = pymupdf.Matrix(zoom, zoom)
 
         image_s3_keys: list[str] = []
-        pdf_stem = Path(pdf_filename).stem
 
         for page_num in range(total_pages):
             page = doc[page_num]
@@ -59,8 +73,8 @@ def pdf_to_images(
             # Get PNG bytes
             png_bytes = pix.tobytes("png")
 
-            # Upload directly to S3 temp bucket
-            image_key = f"{dag_run_id}/{pdf_stem}/page_{page_num + 1:04d}.png"
+            # Upload directly to S3 temp bucket (cache key is pdf_stem, not dag_run_id)
+            image_key = f"{pdf_stem}/page_{page_num + 1:04d}.png"
             s3_client.upload_bytes(png_bytes, TEMP_BUCKET, image_key)
             image_s3_keys.append(image_key)
 
@@ -78,5 +92,5 @@ def pdf_to_images(
     except OSError as e:
         logger.warning(f"Failed to cleanup temp files: {e}")
 
-    logger.info(f"Done! {len(image_s3_keys)} images uploaded to s3://{TEMP_BUCKET}/{dag_run_id}/")
+    logger.info(f"Done! {len(image_s3_keys)} images uploaded to s3://{TEMP_BUCKET}/{pdf_stem}/")
     return image_s3_keys

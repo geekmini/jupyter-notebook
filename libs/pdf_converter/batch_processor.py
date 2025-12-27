@@ -7,6 +7,7 @@ import os
 import requests
 
 from .models import BatchConfig, BatchResult, ConversionResult
+from .prompts import Language, get_conversion_prompt
 from .s3_client import S3Client
 
 
@@ -18,20 +19,11 @@ TEMP_BUCKET = "temp"
 OUTPUT_BUCKET = "markdown-output"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-CONVERSION_PROMPT = """Convert these PDF pages to well-formatted markdown.
-Preserve the document structure including:
-- Headings and subheadings
-- Paragraphs
-- Bullet points and numbered lists
-- Tables (use markdown table format)
-- Any emphasized or bold text
-
-Output only the markdown content, no explanations."""
-
 
 def _call_qwen_api(
     image_data_list: list[bytes],
     api_key: str,
+    prompt: str,
     model: str = DEFAULT_MODEL,
 ) -> ConversionResult:
     """Call Qwen3-VL API with images.
@@ -39,6 +31,7 @@ def _call_qwen_api(
     Args:
         image_data_list: List of PNG image bytes
         api_key: OpenRouter API key
+        prompt: Conversion prompt (language-specific)
         model: Model identifier
 
     Returns:
@@ -51,7 +44,7 @@ def _call_qwen_api(
         content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}})
 
     # Add the instruction text
-    content.append({"type": "text", "text": CONVERSION_PROMPT})
+    content.append({"type": "text", "text": prompt})
 
     response = requests.post(
         OPENROUTER_API_URL,
@@ -109,7 +102,10 @@ def process_batch(
         BatchResult dictionary for XCom serialization
     """
     config = BatchConfig.from_dict(batch_config)
-    logger.info(f"Processing batch {config.batch_id}: pages {config.start_page}-{config.end_page}")
+    logger.info(
+        f"Processing batch {config.batch_id}: pages {config.start_page}-{config.end_page} "
+        f"(language={config.language.value})"
+    )
 
     # Initialize clients
     if s3_client is None:
@@ -129,8 +125,9 @@ def process_batch(
 
         logger.info(f"Downloaded {len(image_data_list)} images for batch {config.batch_id}")
 
-        # Call API
-        conversion_result = _call_qwen_api(image_data_list, api_key, model)
+        # Get language-specific prompt and call API
+        prompt = get_conversion_prompt(config.language)
+        conversion_result = _call_qwen_api(image_data_list, api_key, prompt, model)
 
         # Upload markdown to output bucket
         markdown_key = f"{config.pdf_filename}/pages_{config.start_page:04d}-{config.end_page:04d}.md"

@@ -42,27 +42,41 @@ Output only the markdown content, no explanations.""",
 仅输出markdown内容，不要添加任何解释说明。""",
 }
 
-# Formatting prompts for Claude 3 Haiku
+# Formatting prompts for Claude 3 Haiku (optimized for Notion markdown)
 _FORMATTING_PROMPTS = {
-    Language.ENGLISH: """Clean up and fix the structure of this markdown document.
+    Language.ENGLISH: """Format this markdown document for Notion with beautiful, clean structure.
 
 Tasks:
-1. Fix heading hierarchy (ensure proper H1 → H2 → H3 nesting)
-2. Remove artifacts (page numbers, headers/footers if duplicated)
-3. Normalize formatting (consistent list styles, table alignment)
-4. Remove excessive blank lines while preserving readability
-5. Fix any broken tables or lists
+1. **Heading hierarchy**: Ensure proper H1 → H2 → H3 nesting, use clear section titles
+2. **Remove artifacts**: Delete page numbers, repeated headers/footers, OCR noise
+3. **Beautify structure**:
+   - Use `>` for quotes and important passages
+   - Use `---` dividers between major sections
+   - Use bullet lists (`-`) for unordered items
+   - Use numbered lists (`1.`) for sequential steps
+   - Use **bold** for key terms and emphasis
+   - Use `code` for technical terms if applicable
+4. **Tables**: Fix broken tables, ensure proper alignment
+5. **Spacing**: Add blank lines between sections for readability, remove excessive blanks
+6. **Poetry/Verse**: Format poems with proper line breaks using `>` quote blocks
 
 Preserve all content - do not summarize or omit text.
 Output only the formatted markdown, no explanations.""",
-    Language.CHINESE: """清理并修复此markdown文档的结构。
+    Language.CHINESE: """将此markdown文档格式化为适合Notion的美观、清晰的结构。
 
 任务：
-1. 修复标题层级（确保 H1 → H2 → H3 正确嵌套）
-2. 移除文档杂项（重复的页码、页眉/页脚）
-3. 规范格式（统一列表样式、表格对齐）
-4. 移除多余空行，同时保持可读性
-5. 修复任何损坏的表格或列表
+1. **标题层级**：确保 H1 → H2 → H3 正确嵌套，使用清晰的章节标题
+2. **移除杂项**：删除页码、重复的页眉/页脚、OCR噪音
+3. **美化结构**：
+   - 使用 `>` 引用块来突出重要段落、诗词、引文
+   - 使用 `---` 分隔线区分主要章节
+   - 使用无序列表（`-`）列举要点
+   - 使用有序列表（`1.`）表示步骤或顺序
+   - 使用 **加粗** 强调关键词和重要概念
+   - 适当使用 `代码格式` 标注专有名词
+4. **表格**：修复损坏的表格，确保对齐
+5. **间距**：章节之间添加空行提升可读性，移除多余空行
+6. **诗词格式**：使用 `>` 引用块格式化诗词，保持换行美观
 
 重要规则：
 - 不要翻译！保持原文的语言（中文内容保持中文，不要翻译成英文）

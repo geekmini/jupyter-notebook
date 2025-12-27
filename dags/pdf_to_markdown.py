@@ -294,24 +294,6 @@ def pdf_to_markdown_dag():
 
         return metrics.to_dict()
 
-    @task(trigger_rule="all_success")  # Only cleanup if all upstream tasks succeeded
-    def cleanup_temp_files(**context) -> None:
-        """Delete temporary PNG files from temp bucket.
-
-        Only runs if all upstream tasks succeeded.
-        On failure, temp files are preserved for debugging.
-        """
-        dag_run_id = context["dag_run"].run_id
-        s3_client = S3Client()
-
-        # List and delete all temp files for this run
-        temp_keys = s3_client.list_objects(TEMP_BUCKET, f"{dag_run_id}/")
-        if temp_keys:
-            logger.info(f"Cleaning up {len(temp_keys)} temporary files")
-            s3_client.delete_objects(TEMP_BUCKET, temp_keys)
-        else:
-            logger.info("No temporary files to clean up")
-
     # Define task flow
     pdf_key = get_new_pdf_key()
     image_keys = convert_pdf_to_images(pdf_key)
@@ -330,11 +312,9 @@ def pdf_to_markdown_dag():
     # Aggregate formatting results and combine with conversion metrics
     final_metrics = aggregate_formatting_results(formatting_results, conversion_metrics)
 
-    # Cleanup temp files
-    cleanup = cleanup_temp_files()
-
-    # Set task dependencies (Airflow syntax)
-    final_metrics >> cleanup  # type: ignore[operator]
+    # Note: Temp files (PNG images) are kept as cache for future runs
+    # The final_metrics task is the last task in the DAG
+    return final_metrics
 
 
 # Instantiate the DAG

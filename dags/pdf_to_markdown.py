@@ -22,6 +22,7 @@ from pdf_converter.batch_processor import process_batch
 from pdf_converter.image_converter import pdf_to_images
 from pdf_converter.markdown_formatter import format_markdown
 from pdf_converter.models import BatchResult, DAGRunMetrics, FormattingConfig, FormattingResult
+from pdf_converter.prompts import Language
 from pdf_converter.s3_client import S3Client
 
 
@@ -126,10 +127,28 @@ def pdf_to_markdown_dag():
         dag_run_id = context["dag_run"].run_id
         pdf_filename = Path(pdf_key).name
 
+        # Extract target language from DAG run conf (default: Chinese)
+        dag_run = context.get("dag_run")
+        conf = dag_run.conf if dag_run else {}
+        target_language = conf.get("target_language", "zh") if conf else "zh"
+
+        # Convert string to Language enum with validation
+        try:
+            language = Language(target_language)
+        except ValueError:
+            logger.warning(
+                f"Invalid target_language '{target_language}', falling back to Chinese. "
+                f"Valid options: {[lang.value for lang in Language]}"
+            )
+            language = Language.CHINESE
+
+        logger.info(f"Target language: {language.value} ({language.name})")
+
         configs = generate_batch_configs(
             image_s3_keys=image_keys,
             pdf_filename=pdf_filename,
             dag_run_id=dag_run_id,
+            language=language,
             batch_size=BATCH_SIZE,
         )
         logger.info(f"Created {len(configs)} batch configs for {len(image_keys)} pages")
@@ -146,17 +165,30 @@ def pdf_to_markdown_dag():
         return process_batch(batch_config)
 
     @task
-    def create_formatting_configs(metrics: dict) -> list[dict]:
+    def create_formatting_configs(metrics: dict, **context) -> list[dict]:
         """Generate formatting configs from conversion metrics."""
         markdown_keys = metrics["markdown_s3_keys"]
+
+        # Extract target language from DAG run conf (must match conversion stage)
+        dag_run = context.get("dag_run")
+        conf = dag_run.conf if dag_run else {}
+        target_language = conf.get("target_language", "zh") if conf else "zh"
+
+        try:
+            language = Language(target_language)
+        except ValueError:
+            logger.warning(f"Invalid target_language '{target_language}' in formatting, falling back to Chinese.")
+            language = Language.CHINESE
+
         configs = [
             FormattingConfig(
                 markdown_s3_key=key,
                 output_bucket=OUTPUT_BUCKET,
+                language=language,
             ).to_dict()
             for key in markdown_keys
         ]
-        logger.info(f"Created {len(configs)} formatting configs")
+        logger.info(f"Created {len(configs)} formatting configs (language={language.value})")
         return configs
 
     @task(

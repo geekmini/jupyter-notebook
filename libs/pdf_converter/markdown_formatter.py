@@ -4,6 +4,7 @@ import logging
 
 from .llm_client import LLMClient
 from .models import FormattingConfig, FormattingResult
+from .prompts import get_formatting_prompt
 from .s3_client import S3Client
 
 
@@ -11,18 +12,6 @@ logger = logging.getLogger(__name__)
 
 # Default model for formatting (Claude 3 Haiku - fast and cheap for text tasks)
 DEFAULT_FORMATTING_MODEL = "anthropic/claude-3-haiku"
-
-FORMATTING_PROMPT = """Clean up and fix the structure of this markdown document.
-
-Tasks:
-1. Fix heading hierarchy (ensure proper H1 → H2 → H3 nesting)
-2. Remove artifacts (page numbers, headers/footers if duplicated)
-3. Normalize formatting (consistent list styles, table alignment)
-4. Remove excessive blank lines while preserving readability
-5. Fix any broken tables or lists
-
-Preserve all content - do not summarize or omit text.
-Output only the formatted markdown, no explanations."""
 
 
 def format_markdown(
@@ -45,7 +34,7 @@ def format_markdown(
         FormattingResult dictionary for XCom serialization
     """
     config = FormattingConfig.from_dict(formatting_config)
-    logger.info(f"Formatting markdown file: {config.markdown_s3_key}")
+    logger.info(f"Formatting markdown file: {config.markdown_s3_key} (language={config.language.value})")
 
     # Initialize clients
     if s3_client is None:
@@ -61,10 +50,11 @@ def format_markdown(
 
         logger.info(f"Downloaded {len(original_markdown)} characters from {config.markdown_s3_key}")
 
-        # Call LLM for formatting
+        # Get language-specific prompt and call LLM for formatting
+        prompt = get_formatting_prompt(config.language)
         llm_response = llm_client.call_text(
             model=model,
-            prompt=FORMATTING_PROMPT,
+            prompt=prompt,
             content=original_markdown,
             max_tokens=16000,
             timeout=300,

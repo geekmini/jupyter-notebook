@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from .prompts import Language
+
 
 @dataclass
 class ConversionResult:
@@ -26,6 +28,7 @@ class BatchConfig:
     image_s3_keys: list[str]
     pdf_filename: str
     dag_run_id: str
+    language: Language = Language.CHINESE
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for XCom serialization."""
@@ -36,6 +39,7 @@ class BatchConfig:
             "image_s3_keys": self.image_s3_keys,
             "pdf_filename": self.pdf_filename,
             "dag_run_id": self.dag_run_id,
+            "language": self.language.value,
         }
 
     @classmethod
@@ -48,6 +52,7 @@ class BatchConfig:
             image_s3_keys=data["image_s3_keys"],
             pdf_filename=data["pdf_filename"],
             dag_run_id=data["dag_run_id"],
+            language=Language(data.get("language", "zh")),
         )
 
 
@@ -145,12 +150,14 @@ class FormattingConfig:
 
     markdown_s3_key: str
     output_bucket: str
+    language: Language = Language.CHINESE
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for XCom serialization."""
         return {
             "markdown_s3_key": self.markdown_s3_key,
             "output_bucket": self.output_bucket,
+            "language": self.language.value,
         }
 
     @classmethod
@@ -159,6 +166,7 @@ class FormattingConfig:
         return cls(
             markdown_s3_key=data["markdown_s3_key"],
             output_bucket=data["output_bucket"],
+            language=Language(data.get("language", "zh")),
         )
 
 

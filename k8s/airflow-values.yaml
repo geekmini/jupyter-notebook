@@ -1,0 +1,207 @@
+# Airflow Helm Chart Values for k3s deployment
+# Chart: https://github.com/airflow-helm/charts
+
+###################################
+## AIRFLOW - Common Config
+###################################
+airflow:
+  ## Airflow 3.x image
+  image:
+    repository: apache/airflow
+    tag: "3.0.2"
+    pullPolicy: IfNotPresent
+
+  ## Executor: KubernetesExecutor for cloud-native task execution
+  executor: KubernetesExecutor
+
+  ## Airflow configuration
+  config:
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    # Logging
+    AIRFLOW__LOGGING__LOGGING_LEVEL: "INFO"
+    # Webserver
+    AIRFLOW__WEBSERVER__BASE_URL: "http://airflow.tron.home"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    # Scheduler
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "60"
+
+  ## Extra pip packages to install on all pods
+  extraPipPackages:
+    - "pymupdf==1.25.5"
+    - "boto3==1.38.33"
+    - "requests>=2.32.3"
+    - "python-dotenv>=1.1.0"
+
+  ## Extra environment variables from secrets
+  extraEnv:
+    - name: OPENROUTER_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: airflow-secrets
+          key: openrouter-api-key
+    - name: AWS_ACCESS_KEY_ID
+      value: "minioadmin"
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: airflow-secrets
+          key: minio-secret-key
+    - name: AWS_ENDPOINT_URL
+      value: "http://minio.airflow.svc.cluster.local:9000"
+    - name: MINIO_ENDPOINT
+      value: "http://minio.airflow.svc.cluster.local:9000"
+    - name: PYTHONPATH
+      value: "/opt/airflow/dags/repo/libs"
+
+  ## KubernetesExecutor pod template configuration
+  kubernetesPodTemplate:
+    extraPipPackages:
+      - "pymupdf==1.25.5"
+      - "boto3==1.38.33"
+      - "requests>=2.32.3"
+      - "python-dotenv>=1.1.0"
+
+    ## Resource limits for task pods
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+
+###################################
+## AIRFLOW - Scheduler
+###################################
+scheduler:
+  replicas: 1
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+###################################
+## AIRFLOW - Webserver
+###################################
+web:
+  replicas: 1
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  ## Web service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+
+###################################
+## AIRFLOW - Triggerer
+###################################
+triggerer:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "250m"
+
+###################################
+## AIRFLOW - Workers (disabled for KubernetesExecutor)
+###################################
+workers:
+  enabled: false
+
+###################################
+## AIRFLOW - Flower (disabled)
+###################################
+flower:
+  enabled: false
+
+###################################
+## DAGs - Git Sync Configuration
+###################################
+dags:
+  path: /opt/airflow/dags
+
+  gitSync:
+    enabled: true
+
+    ## Git repository URL (public repo, no auth needed)
+    repo: "https://github.com/geekmini/jupyter-notebook.git"
+    branch: "main"
+    revision: "HEAD"
+
+    ## Sub-path within repo where dags are located
+    repoSubPath: "dags"
+
+    ## Sync interval in seconds
+    syncWait: 60
+
+    ## Max seconds for a complete sync
+    syncTimeout: 120
+
+###################################
+## POSTGRESQL - Embedded Database
+###################################
+postgresql:
+  enabled: true
+
+  ## PostgreSQL auth config
+  auth:
+    username: airflow
+    password: airflow
+    database: airflow
+
+  ## Storage
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "nfs"  # Use your NFS storage class
+      size: 8Gi
+
+###################################
+## REDIS - Disabled (not needed for KubernetesExecutor)
+###################################
+redis:
+  enabled: false
+
+###################################
+## INGRESS - Traefik Configuration
+###################################
+ingress:
+  enabled: true
+
+  ## Ingress API version
+  apiVersion: networking.k8s.io/v1
+
+  ## Airflow webserver ingress
+  web:
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web
+    host: "airflow.tron.home"
+    path: ""
+    ingressClassName: "traefik"
+
+###################################
+## SERVICE ACCOUNT
+###################################
+serviceAccount:
+  create: true
+  name: airflow
+
+###################################
+## RBAC - Required for KubernetesExecutor
+###################################
+rbac:
+  create: true

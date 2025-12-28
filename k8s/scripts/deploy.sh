@@ -52,18 +52,15 @@ fi
 kubectl apply -f "$K8S_DIR/secrets.yaml"
 echo ""
 
-# Step 3: Deploy MinIO
-echo -e "${YELLOW}Step 3: Deploying MinIO...${NC}"
-kubectl apply -f "$K8S_DIR/minio/"
-echo ""
-
-# Wait for MinIO to be ready
-echo -e "${YELLOW}Waiting for MinIO to be ready...${NC}"
-kubectl wait --for=condition=available --timeout=120s deployment/minio -n airflow || {
-    echo -e "${RED}MinIO deployment timed out. Check logs with: kubectl logs -n airflow -l app=minio${NC}"
+# Step 3: Check MinIO is running (deployed via k3s-infra)
+echo -e "${YELLOW}Step 3: Checking MinIO...${NC}"
+if ! kubectl get deployment minio -n minio &> /dev/null; then
+    echo -e "${RED}Error: MinIO not found in 'minio' namespace!${NC}"
+    echo "Please deploy MinIO first from k3s-infra:"
+    echo "  cd ../k3s-infra/minio && ./deploy.sh"
     exit 1
-}
-echo -e "${GREEN}MinIO is ready${NC}"
+fi
+echo -e "${GREEN}MinIO is available${NC}"
 echo ""
 
 # Step 4: Add Helm repo
@@ -97,13 +94,8 @@ echo "Access Airflow Web UI:"
 echo "  URL: http://airflow.tron.home"
 echo "  Default credentials: admin / admin"
 echo ""
-echo "Access MinIO Console:"
+echo "MinIO Console (deployed via k3s-infra):"
 echo "  URL: http://minio.tron.home"
-echo "  Credentials: minioadmin / <your-secret-key>"
-echo ""
-echo "Make sure to add DNS entries in your router:"
-echo "  airflow.tron.home -> <k3s-node-ip>"
-echo "  minio.tron.home   -> <k3s-node-ip>"
 echo ""
 echo "Useful commands:"
 echo "  kubectl get pods -n airflow           # Check pod status"

@@ -48,9 +48,9 @@ airflow:
           name: airflow-secrets
           key: minio-secret-key
     - name: AWS_ENDPOINT_URL
-      value: "http://minio.airflow.svc.cluster.local:9000"
+      value: "http://minio.minio.svc.cluster.local:9000"
     - name: MINIO_ENDPOINT
-      value: "http://minio.airflow.svc.cluster.local:9000"
+      value: "http://minio.minio.svc.cluster.local:9000"
     - name: PYTHONPATH
       value: "/opt/airflow/dags/repo/libs"
 
